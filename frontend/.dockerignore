@@ -1,0 +1,9 @@
+node_modules/
+dist/
+coverage/
+tests/
+*.log
+.env
+.env.*
+.eslintrc.cjs
+.prettierrc

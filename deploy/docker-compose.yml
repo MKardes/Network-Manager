@@ -1,0 +1,54 @@
+# WireGuard Network Manager — two-service deployment.
+# SECURITY: the frontend port is published to the loopback/WG address ONLY
+# (see BIND_ADDR in .env). Never bind to 0.0.0.0 in production.
+services:
+  backend:
+    build:
+      context: ../backend
+    image: wg-network-manager-backend:latest
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DATA_DIR: /data
+      # Bind the API to loopback inside the container; nginx reaches it over the
+      # compose network. The public exposure is the frontend port only.
+      BIND_HOST: 0.0.0.0
+      PORT: "8080"
+    # WireGuard needs NET_ADMIN + the tun device; everything else is dropped.
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun
+    volumes:
+      - wg_data:/data
+    # Root FS read-only; only the data volume + tmp are writable.
+    read_only: true
+    tmpfs:
+      - /tmp
+    # No published ports: only the frontend is reachable; backend is internal.
+    expose:
+      - "8080"
+
+  frontend:
+    build:
+      context: ../frontend
+    image: wg-network-manager-frontend:latest
+    restart: unless-stopped
+    depends_on:
+      - backend
+    # Publish ONLY on the loopback/WG interface (BIND_ADDR from .env, e.g. 127.0.0.1).
+    ports:
+      - "${BIND_ADDR:-127.0.0.1}:${WEB_PORT:-8443}:80"
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /var/cache/nginx
+      - /var/run
+    cap_drop:
+      - ALL
+
+volumes:
+  wg_data:

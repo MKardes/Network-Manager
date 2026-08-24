@@ -1,0 +1,59 @@
+{
+  "name": "wg-network-manager-backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "WireGuard Network Manager backend (Fastify + SQLite)",
+  "main": "dist/index.js",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json && npm run copy:assets",
+    "copy:assets": "node -e \"const fs=require('fs');fs.mkdirSync('dist/store/migrations',{recursive:true});for(const f of fs.readdirSync('src/store/migrations')) if(f.endsWith('.sql')) fs.copyFileSync('src/store/migrations/'+f,'dist/store/migrations/'+f);\"",
+    "start": "node dist/index.js",
+    "dev": "tsx watch src/index.ts",
+    "recovery": "node dist/recovery.js",
+    "lint": "eslint \"src/**/*.ts\" \"tests/**/*.ts\"",
+    "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\"",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@fastify/cookie": "^9.3.1",
+    "@fastify/multipart": "^8.3.0",
+    "@fastify/websocket": "^10.0.1",
+    "argon2": "^0.41.1",
+    "better-sqlite3": "^11.3.0",
+    "fastify": "^4.28.1",
+    "libsodium": "^0.7.13",
+    "libsodium-wrappers": "^0.7.13",
+    "otplib": "^12.0.1",
+    "pino": "^9.4.0",
+    "ssh2": "^1.16.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.11",
+    "@types/libsodium-wrappers": "^0.7.14",
+    "@types/node": "^22.5.5",
+    "@types/ssh2": "^1.15.1",
+    "@types/ws": "^8.18.1",
+    "@typescript-eslint/eslint-plugin": "^8.6.0",
+    "@typescript-eslint/parser": "^8.6.0",
+    "eslint": "^8.57.1",
+    "eslint-config-prettier": "^9.1.0",
+    "prettier": "^3.3.3",
+    "tsx": "^4.19.1",
+    "typescript": "^5.6.2",
+    "vitest": "^2.1.1"
+  },
+  "allowScripts": {
+    "argon2@0.41.1": true,
+    "better-sqlite3@11.10.0": true,
+    "cpu-features@0.0.10": true,
+    "esbuild@0.28.2": true,
+    "esbuild@0.21.5": true,
+    "ssh2@1.17.0": true
+  }
+}

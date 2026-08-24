@@ -1,0 +1,33 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+
+# Logs
+*.log
+logs/
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+deploy/.env
+
+# Data (SQLite volume, keys)
+data/
+*.sqlite
+*.sqlite-*
+*.db
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+*.tmp
+*.swp
+.vscode/
+.idea/
+
+# Test / coverage
+coverage/

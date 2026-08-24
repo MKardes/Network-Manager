@@ -1,0 +1,13 @@
+node_modules/
+dist/
+coverage/
+tests/
+*.log
+.env
+.env.*
+data/
+*.sqlite
+*.sqlite-*
+.eslintrc.cjs
+.prettierrc
+vitest.config.ts

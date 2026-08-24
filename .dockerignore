@@ -1,0 +1,16 @@
+node_modules/
+.git/
+dist/
+build/
+coverage/
+*.log
+.env
+.env.*
+!.env.example
+data/
+*.sqlite
+*.sqlite-*
+*.db
+.DS_Store
+Dockerfile*
+.dockerignore
