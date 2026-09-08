@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildClientProfile, buildServerConfig } from '../../src/servers/profile.js';
+import { buildClientProfile, buildServerConfig, stripForSync } from '../../src/servers/profile.js';
 import { parseWgDump } from '../../src/servers/status.js';
 
 describe('WireGuard config rendering', () => {
@@ -28,6 +28,48 @@ describe('WireGuard config rendering', () => {
     expect(conf).toContain('ListenPort = 51820');
     expect(conf).toContain('PublicKey = PEER1');
     expect(conf).toContain('AllowedIPs = 10.0.0.2/32');
+  });
+
+  it('strips wg-quick-only keys for wg syncconf, keeping wg-native fields', () => {
+    const conf = buildServerConfig({
+      serverPrivateKey: 'SRVPRIV',
+      addressRange: '10.0.0.1/24',
+      listenPort: 51820,
+      peers: [{ publicKey: 'PEER1', tunnelAddress: '10.0.0.2' }],
+    });
+    const stripped = stripForSync(conf);
+    // `wg syncconf` rejects Address (the reported failure); it must be gone.
+    expect(stripped).not.toMatch(/^Address\s*=/m);
+    // wg-native fields and peers must survive.
+    expect(stripped).toContain('ListenPort = 51820');
+    expect(stripped).toContain('PrivateKey = SRVPRIV');
+    expect(stripped).toContain('[Peer]');
+    expect(stripped).toContain('PublicKey = PEER1');
+    expect(stripped).toContain('AllowedIPs = 10.0.0.2/32');
+  });
+
+  it('strips DNS/MTU from a client-style config regardless of spacing', () => {
+    const stripped = stripForSync('[Interface]\nAddress=10.0.0.2/32\nDNS = 1.1.1.1\nMTU=1420\nPrivateKey = P\n');
+    expect(stripped).not.toMatch(/Address/);
+    expect(stripped).not.toMatch(/DNS/);
+    expect(stripped).not.toMatch(/MTU/);
+    expect(stripped).toContain('PrivateKey = P');
+  });
+
+  it('renders an imported peer with its verbatim AllowedIPs, created peers as /32 (feature 002)', () => {
+    const conf = buildServerConfig({
+      serverPrivateKey: 'SRVPRIV',
+      addressRange: '10.0.0.1/24',
+      listenPort: 51820,
+      peers: [
+        { publicKey: 'CREATED', tunnelAddress: '10.0.0.2' },
+        { publicKey: 'IMPORTED', allowedIps: '10.0.5.0/24, 10.0.6.7/32' },
+      ],
+    });
+    expect(conf).toContain('PublicKey = CREATED');
+    expect(conf).toContain('AllowedIPs = 10.0.0.2/32');
+    expect(conf).toContain('PublicKey = IMPORTED');
+    expect(conf).toContain('AllowedIPs = 10.0.5.0/24, 10.0.6.7/32');
   });
 });
 

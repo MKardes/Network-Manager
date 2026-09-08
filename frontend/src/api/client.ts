@@ -89,6 +89,41 @@ export interface Device {
   sshTargetId: string | null;
   reachability: 'connected' | 'offline' | 'unknown';
   lastSeenAt: string | null;
+  origin: 'created' | 'imported';
+  managementState: 'managed' | 'needs_review';
+  allowedIps: string | null;
+}
+
+export interface Peer {
+  deviceId: string;
+  name: string;
+  managementState: 'managed' | 'needs_review';
+  origin: 'created' | 'imported';
+  publicKey: string | null;
+  tunnelAddress: string | null;
+  allowedIps: string | null;
+  presentOnServer: boolean;
+  connected: boolean;
+  latestHandshake: number | null;
+  endpoint: string | null;
+  outOfRange: boolean;
+  hasPrivateKey: boolean;
+}
+
+export interface PeersResponse {
+  live: boolean;
+  peers: Peer[];
+}
+
+export interface SshTarget {
+  id: string;
+  host: string;
+  port: number;
+  username: string;
+  publicKey: string;
+  knownHostKey: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface Segment {
@@ -96,6 +131,23 @@ export interface Segment {
   serverId: string;
   name: string;
   wakeControllerDeviceId: string | null;
+  broadcastAddress: string | null;
+  wolPort: number | null;
+}
+
+/** Result of an on-demand connectivity test (feature 003). */
+export interface ReachabilityResult {
+  reachability: 'connected' | 'offline' | 'unknown';
+  latencyMs: number | null;
+  vantage: 'server' | 'controller';
+  testedAt: string;
+}
+
+/** Result of a Wake-on-LAN command (feature 003). */
+export interface WakeResult {
+  result: 'already_reachable' | 'relayed' | 'relayed_still_down';
+  alreadyReachable: boolean;
+  controller: string;
 }
 
 export interface DeviceGroups {

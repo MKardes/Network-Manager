@@ -1,5 +1,6 @@
 import { connect, type SshConnectionInfo } from '../remote/runner.js';
 import { parseWgDump, type PeerStatus } from './status.js';
+import { stripForSync } from './profile.js';
 
 /**
  * Apply configuration to a REMOTE WireGuard server over SSH using only the fixed
@@ -10,9 +11,11 @@ export class RemoteApplier {
 
   async apply(iface: string, config: string): Promise<void> {
     const confPath = `/etc/wireguard/${iface}.conf`;
+    const syncPath = `/etc/wireguard/${iface}.sync.conf`;
     const runner = await connect(this.connInfo);
     try {
-      // Write the rendered config (streamed on stdin via the vetted writeConfig).
+      // Write the canonical wg-quick config (with Address/…) that wg-quick up
+      // reads. Streamed on stdin via the vetted writeConfig.
       const write = await runner.runVetted('writeConfig', [confPath], config);
       if (write.code !== 0) {
         throw new Error(`Failed to write remote config: ${write.stderr || write.code}`);
@@ -20,7 +23,13 @@ export class RemoteApplier {
       // Try syncconf; if the interface is down, bring it up.
       const show = await runner.runVetted('wgShow', [iface]);
       if (show.code === 0) {
-        const sync = await runner.runVetted('wgSyncConf', [iface, confPath]);
+        // syncconf uses wg's native parser and rejects wg-quick-only keys, so
+        // stage a stripped config alongside the canonical one.
+        const writeSync = await runner.runVetted('writeConfig', [syncPath], stripForSync(config));
+        if (writeSync.code !== 0) {
+          throw new Error(`Failed to write remote sync config: ${writeSync.stderr || writeSync.code}`);
+        }
+        const sync = await runner.runVetted('wgSyncConf', [iface, syncPath]);
         if (sync.code !== 0) throw new Error(`wg syncconf failed: ${sync.stderr}`);
       } else {
         const up = await runner.runVetted('wgQuick', ['up', iface]);

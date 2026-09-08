@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
-import { api, ApiError, type Server } from '../api/client';
+import { Link } from 'react-router-dom';
+import { api, ApiError, type Server, type SshTarget } from '../api/client';
 import { useActiveServer } from '../app/activeServer';
 
 /** Servers page: list, register/edit, select-active, apply, and status (T042). */
 export function Servers() {
   const [servers, setServers] = useState<Server[]>([]);
+  const [sshTargets, setSshTargets] = useState<SshTarget[]>([]);
   const [active, setActive] = useActiveServer();
   const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState({
@@ -25,8 +27,18 @@ export function Servers() {
     }
   };
 
+  const loadSshTargets = async () => {
+    try {
+      const { sshTargets } = await api.get<{ sshTargets: SshTarget[] }>('/ssh-targets');
+      setSshTargets(sshTargets);
+    } catch {
+      // Non-fatal: the dropdown just stays empty and links to the SSH Targets page.
+    }
+  };
+
   useEffect(() => {
     void load();
+    void loadSshTargets();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -154,12 +166,26 @@ export function Servers() {
         </label>
         {form.location === 'remote' && (
           <label>
-            SSH target ID
-            <input
-              value={form.sshTargetId}
-              onChange={(e) => setForm({ ...form, sshTargetId: e.target.value })}
-              placeholder="uuid of an SSH target"
-            />
+            SSH target
+            {sshTargets.length > 0 ? (
+              <select
+                value={form.sshTargetId}
+                onChange={(e) => setForm({ ...form, sshTargetId: e.target.value })}
+                required
+              >
+                <option value="">— select an SSH target —</option>
+                {sshTargets.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.username}@{t.host}:{t.port}
+                    {t.knownHostKey ? '' : ' (untrusted)'}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <span className="muted">
+                No SSH targets yet — create one on the <Link to="/ssh-targets">SSH Targets</Link> page first.
+              </span>
+            )}
           </label>
         )}
         <button type="submit">Register</button>

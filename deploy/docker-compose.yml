@@ -40,13 +40,13 @@ services:
     depends_on:
       - backend
     # Publish ONLY on the loopback/WG interface (BIND_ADDR from .env, e.g. 127.0.0.1).
+    # Container listens on 8080 (unprivileged nginx cannot bind <1024).
     ports:
-      - "${BIND_ADDR:-127.0.0.1}:${WEB_PORT:-8443}:80"
+      - "${BIND_ADDR:-127.0.0.1}:${WEB_PORT:-8443}:8080"
     read_only: true
+    # Unprivileged nginx writes temp paths and its pid under /tmp only.
     tmpfs:
       - /tmp
-      - /var/cache/nginx
-      - /var/run
     cap_drop:
       - ALL
 

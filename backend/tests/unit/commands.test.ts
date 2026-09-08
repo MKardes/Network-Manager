@@ -19,6 +19,31 @@ describe('vetted command builders', () => {
     expect(() => vetted.wake('AA:BB:CC:DD:EE:FF; reboot')).toThrow(VettedCommandError);
   });
 
+  it('directs the wake packet to a segment broadcast + port when given (feature 003)', () => {
+    expect(vetted.wake('AA:BB:CC:DD:EE:FF', { broadcast: '192.168.1.255', port: 9 })).toBe(
+      "wakeonlan -i '192.168.1.255' -p 9 'AA:BB:CC:DD:EE:FF'",
+    );
+    // Absent targeting preserves the legacy fallback string.
+    expect(vetted.wake('AA:BB:CC:DD:EE:FF', {})).toBe(
+      "wakeonlan 'AA:BB:CC:DD:EE:FF' || etherwake 'AA:BB:CC:DD:EE:FF'",
+    );
+  });
+
+  it('rejects a bad broadcast address or port', () => {
+    expect(() => vetted.wake('AA:BB:CC:DD:EE:FF', { broadcast: 'nope' })).toThrow(VettedCommandError);
+    expect(() => vetted.wake('AA:BB:CC:DD:EE:FF', { port: 70000 })).toThrow(VettedCommandError);
+    expect(() => vetted.wake('AA:BB:CC:DD:EE:FF', { port: 0 })).toThrow(VettedCommandError);
+  });
+
+  it('builds a bounded probe command for a valid IPv4 host (feature 003)', () => {
+    expect(vetted.probe('10.0.0.2')).toBe("ping -c 1 -W 3 '10.0.0.2'");
+  });
+
+  it('rejects a non-IPv4 probe host (injection attempt)', () => {
+    expect(() => vetted.probe('10.0.0.2; reboot')).toThrow(VettedCommandError);
+    expect(() => vetted.probe('example.com')).toThrow(VettedCommandError);
+  });
+
   it('rejects a config path outside the allowed pattern', () => {
     expect(() => vetted.wgSyncConf('wg0', 'relative/path.conf')).toThrow(VettedCommandError);
     expect(() => vetted.writeConfig('/etc/wireguard/$(whoami).conf')).toThrow(VettedCommandError);

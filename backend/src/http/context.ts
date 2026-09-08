@@ -9,9 +9,11 @@ import { SshTargetRepo } from '../store/ssh-targets.js';
 import { ServerRepo } from '../store/servers.js';
 import { DeviceRepo } from '../store/devices.js';
 import { ServerService } from '../servers/service.js';
+import { PeerReconcileService } from '../servers/peers.js';
 import { DeviceService } from '../devices/service.js';
 import { SegmentService } from '../devices/segments.js';
 import { WakeService } from '../wol/service.js';
+import { ReachabilityService } from '../reachability/service.js';
 import { SessionRegistry } from '../session/registry.js';
 
 /**
@@ -30,8 +32,10 @@ export interface AppContext {
   servers: ServerRepo;
   devices: DeviceRepo;
   serverService: ServerService;
+  peerService: PeerReconcileService;
   deviceService: DeviceService;
   segmentService: SegmentService;
+  reachabilityService: ReachabilityService;
   wakeService: WakeService;
   registry: SessionRegistry;
 }
@@ -46,8 +50,10 @@ export function buildContext(db: DB, config: AppConfig, log: Logger): AppContext
   const devices = new DeviceRepo(db);
   const segmentService = new SegmentService(db, audit);
   const serverService = new ServerService(servers, devices, sshTargets, audit, config.dataDir);
+  const peerService = new PeerReconcileService(servers, devices, serverService);
   const deviceService = new DeviceService(devices, servers, audit);
-  const wakeService = new WakeService(devices, segmentService, sshTargets, audit);
+  const reachabilityService = new ReachabilityService(devices, servers, sshTargets, audit);
+  const wakeService = new WakeService(devices, segmentService, sshTargets, audit, reachabilityService);
   const registry = new SessionRegistry(config.idleTimeoutMs);
 
   return {
@@ -62,8 +68,10 @@ export function buildContext(db: DB, config: AppConfig, log: Logger): AppContext
     servers,
     devices,
     serverService,
+    peerService,
     deviceService,
     segmentService,
+    reachabilityService,
     wakeService,
     registry,
   };

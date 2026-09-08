@@ -54,4 +54,11 @@ export async function registerServerRoutes(app: FastifyInstance, ctx: AppContext
     const { id } = req.params as { id: string };
     return ctx.serverService.status(id);
   });
+
+  // Reconciled peer view: imports unknown live peers, labels managed vs
+  // needs-review, and flags discrepancies/out-of-range (feature 002, US1).
+  app.get('/servers/:id/peers', guard, async (req) => {
+    const { id } = req.params as { id: string };
+    return ctx.peerService.reconcile(id);
+  });
 }

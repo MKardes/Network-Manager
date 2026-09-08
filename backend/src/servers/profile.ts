@@ -32,7 +32,8 @@ export function buildClientProfile(input: ClientProfileInput): string {
 
 export interface ServerPeer {
   publicKey: string;
-  tunnelAddress: string; // host address (without mask); rendered as /32
+  tunnelAddress?: string | null; // host address (without mask); rendered as /32
+  allowedIps?: string | null; // imported peers: verbatim AllowedIPs; overrides tunnelAddress
 }
 
 export interface ServerConfigInput {
@@ -40,6 +41,34 @@ export interface ServerConfigInput {
   addressRange: string; // server's own address within the range, e.g. 10.0.0.1/24
   listenPort: number;
   peers: ServerPeer[];
+}
+
+/**
+ * wg-quick-only `[Interface]` directives. `wg setconf`/`syncconf` use wg's
+ * native parser, which rejects these (e.g. "Line unrecognized: `Address=...'").
+ */
+const WG_QUICK_ONLY_KEYS = new Set([
+  'address',
+  'dns',
+  'mtu',
+  'table',
+  'preup',
+  'postup',
+  'predown',
+  'postdown',
+  'saveconfig',
+]);
+
+/**
+ * Strip wg-quick-only directives so the config is accepted by `wg syncconf`.
+ * The interface address is already established by the initial `wg-quick up`, so
+ * syncconf only needs the private key, listen port, and peers.
+ */
+export function stripForSync(config: string): string {
+  return config
+    .split('\n')
+    .filter((line) => !WG_QUICK_ONLY_KEYS.has(line.split('=', 1)[0].trim().toLowerCase()))
+    .join('\n');
 }
 
 /** Render the server interface config (wgN.conf). */
@@ -52,7 +81,8 @@ export function buildServerConfig(input: ServerConfigInput): string {
     '',
   ];
   for (const peer of input.peers) {
-    parts.push('[Peer]', `PublicKey = ${peer.publicKey}`, `AllowedIPs = ${peer.tunnelAddress}/32`, '');
+    const allowed = peer.allowedIps ?? `${peer.tunnelAddress}/32`;
+    parts.push('[Peer]', `PublicKey = ${peer.publicKey}`, `AllowedIPs = ${allowed}`, '');
   }
   return parts.join('\n');
 }

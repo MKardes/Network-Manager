@@ -10,6 +10,12 @@ const createSchema = z.object({
   segmentId: z.string().uuid().nullable().optional(),
   macAddress: z.string().nullable().optional(),
   sshTargetId: z.string().uuid().nullable().optional(),
+  tunnelAddress: z.string().min(1).max(18).nullable().optional(),
+});
+
+const adoptSchema = z.object({
+  name: z.string().min(1).max(64),
+  segmentId: z.string().uuid().nullable().optional(),
 });
 
 /**
@@ -72,6 +78,13 @@ export async function registerDeviceRoutes(app: FastifyInstance, ctx: AppContext
     return { device: await ctx.deviceService.rotateKeys(id) };
   });
 
+  // Adopt an imported (needs-review) peer into managed state (feature 002, US3).
+  app.post('/devices/:id/adopt', guard, async (req) => {
+    const { id } = req.params as { id: string };
+    const body = adoptSchema.parse(req.body);
+    return { device: ctx.deviceService.adopt(id, body) };
+  });
+
   app.get('/devices/:id/profile', guard, async (req, reply) => {
     const { id } = req.params as { id: string };
     const profile = ctx.deviceService.buildProfile(id);
@@ -80,8 +93,16 @@ export async function registerDeviceRoutes(app: FastifyInstance, ctx: AppContext
     return reply.send(profile);
   });
 
+  // On-demand connectivity test (feature 003, FR-002). Probes the device from
+  // its server and persists the reachability snapshot; 422 when there is no
+  // vantage/address to probe (FR-004).
+  app.post('/devices/:id/test', guard, async (req) => {
+    const { id } = req.params as { id: string };
+    return ctx.reachabilityService.test(id);
+  });
+
   // Wake via the device's segment controller (FR-015). Preconditions enforced
-  // in the service; failures surface as 422 with an explanation (FR-016).
+  // in the service; failures surface as 422/409 with an explanation (FR-016).
   app.post('/devices/:id/wake', guard, async (req) => {
     const { id } = req.params as { id: string };
     return ctx.wakeService.wake(id);

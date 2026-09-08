@@ -1,6 +1,14 @@
 import { useEffect, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { api, ApiError, type DeviceGroups, type Device, type Segment } from '../api/client';
+import {
+  api,
+  ApiError,
+  type DeviceGroups,
+  type Device,
+  type Segment,
+  type PeersResponse,
+  type ReachabilityResult,
+} from '../api/client';
 import { useActiveServer } from '../app/activeServer';
 import { SegmentForm } from '../components/SegmentForm';
 import { WakeControls } from '../components/WakeControls';
@@ -10,18 +18,27 @@ export function Devices() {
   const [active] = useActiveServer();
   const [data, setData] = useState<DeviceGroups | null>(null);
   const [segments, setSegments] = useState<Segment[]>([]);
+  const [peers, setPeers] = useState<PeersResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [form, setForm] = useState({ name: '', kind: 'peer' as 'peer' | 'host', macAddress: '', segmentId: '' });
+  const [form, setForm] = useState({
+    name: '',
+    kind: 'peer' as 'peer' | 'host',
+    macAddress: '',
+    segmentId: '',
+    tunnelAddress: '',
+  });
 
   const load = useCallback(async () => {
     if (!active) return;
     try {
-      const [groups, segs] = await Promise.all([
+      const [groups, segs, peerView] = await Promise.all([
         api.get<DeviceGroups>(`/servers/${active}/devices`),
         api.get<{ segments: Segment[] }>(`/servers/${active}/segments`),
+        api.get<PeersResponse>(`/servers/${active}/peers`),
       ]);
       setData(groups);
       setSegments(segs.segments);
+      setPeers(peerView);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to load devices.');
     }
@@ -46,16 +63,38 @@ export function Devices() {
         kind: form.kind,
         macAddress: form.macAddress || null,
         segmentId: form.segmentId || null,
+        tunnelAddress: form.kind === 'peer' && form.tunnelAddress ? form.tunnelAddress : undefined,
       });
-      setForm({ ...form, name: '', macAddress: '' });
+      setForm({ ...form, name: '', macAddress: '', tunnelAddress: '' });
       await load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to add device.');
     }
   };
 
+  const adopt = async (deviceId: string, currentName: string) => {
+    const name = prompt('Adopt this peer as a managed device. Name:', currentName);
+    if (!name) return;
+    setError(null);
+    try {
+      await api.post(`/devices/${deviceId}/adopt`, { name });
+      await load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to adopt peer.');
+    }
+  };
+
   const rotate = async (id: string) => {
     await api.post(`/devices/${id}/rotate-keys`).catch(() => undefined);
+    await load();
+  };
+  const test = async (id: string) => {
+    setError(null);
+    try {
+      await api.post<ReachabilityResult>(`/devices/${id}/test`);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Connectivity test unavailable.');
+    }
     await load();
   };
   const revoke = async (id: string) => {
@@ -83,8 +122,14 @@ export function Devices() {
       <td>{d.tunnelAddress ?? d.macAddress ?? '—'}</td>
       <td>
         <span className={`badge ${d.reachability}`}>{d.reachability}</span>
+        {d.lastSeenAt && <span className="muted"> · seen {new Date(d.lastSeenAt).toLocaleString()}</span>}
       </td>
       <td className="actions">
+        {d.kind === 'peer' && d.tunnelAddress && (
+          <button onClick={() => test(d.id)} title="Probe reachability through the server">
+            Test
+          </button>
+        )}
         {d.kind === 'peer' && (
           <>
             <button onClick={() => downloadProfile(d)}>Profile</button>
@@ -109,6 +154,44 @@ export function Devices() {
     <div>
       <h1>Devices</h1>
       {error && <div className="error">{error}</div>}
+
+      <div className="segment-group">
+        <h3>
+          Current peers
+          {peers && !peers.live && <span className="muted"> · offline snapshot (not live)</span>}
+        </h3>
+        {peers && peers.peers.length > 0 ? (
+          <table className="grid">
+            <tbody>
+              {peers.peers.map((p) => (
+                <tr key={p.deviceId}>
+                  <td>{p.name}</td>
+                  <td>{p.tunnelAddress ?? p.allowedIps ?? '—'}</td>
+                  <td>
+                    <span className={`badge ${p.managementState === 'managed' ? 'controller' : 'unknown'}`}>
+                      {p.managementState === 'managed' ? 'managed' : 'needs review'}
+                    </span>
+                    {peers.live && (
+                      <span className={`badge ${p.connected ? 'connected' : 'offline'}`}>
+                        {p.connected ? 'connected' : 'idle'}
+                      </span>
+                    )}
+                    {peers.live && !p.presentOnServer && <span className="badge offline">not on server</span>}
+                    {p.outOfRange && <span className="badge offline">out of range</span>}
+                  </td>
+                  <td className="actions">
+                    {p.managementState === 'needs_review' && (
+                      <button onClick={() => adopt(p.deviceId, p.name)}>Adopt</button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <p className="muted">No peers on this server yet.</p>
+        )}
+      </div>
 
       {data?.groups.map((g) => (
         <div key={g.segment.id} className="segment-group">
@@ -147,6 +230,16 @@ export function Devices() {
             <option value="host">host (non-peer)</option>
           </select>
         </label>
+        {form.kind === 'peer' && (
+          <label>
+            Tunnel address (optional — blank auto-assigns)
+            <input
+              value={form.tunnelAddress}
+              onChange={(e) => setForm({ ...form, tunnelAddress: e.target.value })}
+              placeholder="e.g. 10.0.0.50"
+            />
+          </label>
+        )}
         <label>
           MAC address (for Wake-on-LAN)
           <input

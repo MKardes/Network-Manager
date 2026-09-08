@@ -14,7 +14,7 @@ describe('auth & vault contract', () => {
   it('reports uninitialized status before setup', async () => {
     const res = await t.app.inject({ method: 'GET', url: '/api/v1/vault/status' });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toMatchObject({ initialized: true, operatorExists: false });
+    expect(res.json()).toMatchObject({ initialized: false, operatorExists: false });
   });
 
   it('completes first-run setup and issues a session', async () => {
