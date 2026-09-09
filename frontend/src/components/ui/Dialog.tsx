@@ -21,9 +21,16 @@ export function Dialog({
 }) {
   const ref = useRef<HTMLDivElement>(null);
 
+  // Callers pass `onClose` as an inline arrow, so it is a new function on every
+  // render. Reading it through a ref keeps the effect below mount-only — with
+  // `onClose` as a dependency it re-ran on every keystroke and pulled focus back
+  // to the first field, making every field after the first untypable.
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') closeRef.current();
     };
     document.addEventListener('keydown', onKey);
     // Focus the first control so keyboard users land inside the dialog, not
@@ -33,7 +40,7 @@ export function Dialog({
     );
     first?.focus();
     return () => document.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  }, []);
 
   return (
     <div
