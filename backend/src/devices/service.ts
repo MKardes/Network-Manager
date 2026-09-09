@@ -3,7 +3,7 @@ import { ServerRepo } from '../store/servers.js';
 import { AuditService } from '../audit/audit.js';
 import { generateWgKeyPair } from '../servers/keys.js';
 import { buildClientProfile } from '../servers/profile.js';
-import { allocateAddress, validateAssignableAddress } from '../servers/net.js';
+import { allocateAddress, networkCidr, validateAssignableAddress } from '../servers/net.js';
 import { errors } from '../http/errors.js';
 
 const ACTOR = 'operator';
@@ -227,6 +227,9 @@ export class DeviceService {
       peerAddress: `${row.tunnel_address}/32`,
       serverPublicKey: server.server_public_key,
       serverEndpoint: server.listen_endpoint,
+      // Split tunnel: route only the server's tunnel network over WireGuard.
+      // A full tunnel (0.0.0.0/0) would hijack all of the client's traffic.
+      allowedIps: networkCidr(server.address_range),
     });
   }
 }

@@ -8,6 +8,7 @@ import {
   type Segment,
   type PeersResponse,
   type ReachabilityResult,
+  type SshTarget,
 } from '../api/client';
 import { useActiveServer } from '../app/activeServer';
 import { SegmentForm } from '../components/SegmentForm';
@@ -15,9 +16,10 @@ import { WakeControls } from '../components/WakeControls';
 
 /** Devices page: list grouped by LAN, add/edit, rotate/revoke, download profile (T043). */
 export function Devices() {
-  const [active] = useActiveServer();
+  const [active, setActive] = useActiveServer();
   const [data, setData] = useState<DeviceGroups | null>(null);
   const [segments, setSegments] = useState<Segment[]>([]);
+  const [sshTargets, setSshTargets] = useState<SshTarget[]>([]);
   const [peers, setPeers] = useState<PeersResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState({
@@ -26,29 +28,39 @@ export function Devices() {
     macAddress: '',
     segmentId: '',
     tunnelAddress: '',
+    sshTargetId: '',
   });
 
   const load = useCallback(async () => {
     if (!active) return;
     try {
-      const [groups, segs, peerView] = await Promise.all([
+      const [groups, segs, peerView, targets] = await Promise.all([
         api.get<DeviceGroups>(`/servers/${active}/devices`),
         api.get<{ segments: Segment[] }>(`/servers/${active}/segments`),
         api.get<PeersResponse>(`/servers/${active}/peers`),
+        api.get<{ sshTargets: SshTarget[] }>('/ssh-targets'),
       ]);
       setData(groups);
       setSegments(segs.segments);
       setPeers(peerView);
+      setSshTargets(targets.sshTargets);
     } catch (err) {
+      if (err instanceof ApiError && err.status === 404) {
+        // The remembered server is gone; drop it so the Servers page can pick
+        // a live one instead of every call failing with "Server not found".
+        setActive(null);
+        setError('The selected server no longer exists. Pick a server on the Servers page.');
+        return;
+      }
       setError(err instanceof ApiError ? err.message : 'Failed to load devices.');
     }
-  }, [active]);
+  }, [active, setActive]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
-  if (!active) return <p className="muted">Select a server on the Servers page first.</p>;
+  if (!active) return <p className="muted">{error ?? 'Select a server on the Servers page first.'}</p>;
 
   const allDevices: Device[] = data
     ? [...data.groups.flatMap((g) => g.devices), ...data.ungrouped]
@@ -64,6 +76,7 @@ export function Devices() {
         macAddress: form.macAddress || null,
         segmentId: form.segmentId || null,
         tunnelAddress: form.kind === 'peer' && form.tunnelAddress ? form.tunnelAddress : undefined,
+        sshTargetId: form.sshTargetId || null,
       });
       setForm({ ...form, name: '', macAddress: '', tunnelAddress: '' });
       await load();
@@ -81,6 +94,21 @@ export function Devices() {
       await load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to adopt peer.');
+    }
+  };
+
+  /**
+   * Bind an SSH target to a device — the app only offers Terminal/Files once a
+   * device has one, and it's what routes the session (via the WireGuard server
+   * when the target sits on the tunnel network).
+   */
+  const attachSsh = async (id: string, sshTargetId: string | null) => {
+    setError(null);
+    try {
+      await api.patch(`/devices/${id}`, { sshTargetId });
+      await load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to set the SSH target.');
     }
   };
 
@@ -112,6 +140,19 @@ export function Devices() {
     URL.revokeObjectURL(url);
   };
 
+  const deviceTableHead = (
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Kind</th>
+        <th>Address</th>
+        <th>Reachability</th>
+        <th>SSH target</th>
+        <th></th>
+      </tr>
+    </thead>
+  );
+
   const renderDevice = (d: Device, controllerId: string | null) => (
     <tr key={d.id}>
       <td>
@@ -123,6 +164,27 @@ export function Devices() {
       <td>
         <span className={`badge ${d.reachability}`}>{d.reachability}</span>
         {d.lastSeenAt && <span className="muted"> · seen {new Date(d.lastSeenAt).toLocaleString()}</span>}
+      </td>
+      <td>
+        {/* Binding a target here is what enables Terminal/Files for the device. */}
+        <select
+          value={d.sshTargetId ?? ''}
+          onChange={(e) => attachSsh(d.id, e.target.value || null)}
+          title="SSH target used for Terminal and Files"
+          aria-label={`SSH target for ${d.name}`}
+        >
+          <option value="">— none —</option>
+          {sshTargets.map((t) => (
+            <option key={t.id} value={t.id}>
+              {t.username}@{t.host}
+            </option>
+          ))}
+        </select>
+        {sshTargets.length === 0 && (
+          <div className="muted">
+            <Link to="/ssh-targets">Add an SSH target</Link>
+          </div>
+        )}
       </td>
       <td className="actions">
         {d.kind === 'peer' && d.tunnelAddress && (
@@ -200,6 +262,7 @@ export function Devices() {
             {g.wakeControllerDeviceId && <span className="muted"> · has wake controller</span>}
           </h3>
           <table className="grid">
+            {deviceTableHead}
             <tbody>{g.devices.map((d) => renderDevice(d, g.wakeControllerDeviceId))}</tbody>
           </table>
         </div>
@@ -208,6 +271,7 @@ export function Devices() {
       <div className="segment-group">
         <h3>Ungrouped</h3>
         <table className="grid">
+          {deviceTableHead}
           <tbody>{(data?.ungrouped ?? []).map((d) => renderDevice(d, null))}</tbody>
         </table>
       </div>
@@ -247,6 +311,20 @@ export function Devices() {
             onChange={(e) => setForm({ ...form, macAddress: e.target.value })}
             placeholder="AA:BB:CC:DD:EE:FF"
           />
+        </label>
+        <label>
+          SSH target (for Terminal/Files)
+          <select
+            value={form.sshTargetId}
+            onChange={(e) => setForm({ ...form, sshTargetId: e.target.value })}
+          >
+            <option value="">— none —</option>
+            {sshTargets.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.username}@{t.host}
+              </option>
+            ))}
+          </select>
         </label>
         <label>
           Segment

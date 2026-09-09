@@ -9,6 +9,7 @@ describe('WireGuard config rendering', () => {
       peerAddress: '10.0.0.2/32',
       serverPublicKey: 'SRVPUB',
       serverEndpoint: 'vpn.example.com:51820',
+      allowedIps: '10.0.0.0/24',
     });
     expect(profile).toContain('[Interface]');
     expect(profile).toContain('PrivateKey = PRIV');
@@ -16,6 +17,80 @@ describe('WireGuard config rendering', () => {
     expect(profile).toContain('[Peer]');
     expect(profile).toContain('PublicKey = SRVPUB');
     expect(profile).toContain('Endpoint = vpn.example.com:51820');
+  });
+
+  it('routes only the given network, never a full tunnel', () => {
+    const profile = buildClientProfile({
+      peerPrivateKey: 'PRIV',
+      peerAddress: '10.0.0.2/32',
+      serverPublicKey: 'SRVPUB',
+      serverEndpoint: 'vpn.example.com:51820',
+      allowedIps: '10.0.0.0/24',
+    });
+    expect(profile).toContain('AllowedIPs = 10.0.0.0/24');
+    expect(profile).not.toContain('0.0.0.0/0');
+    expect(profile).not.toContain('::/0');
+  });
+
+  it('renders the exact client layout: PrivateKey/Address/DNS then peer block', () => {
+    const profile = buildClientProfile({
+      peerPrivateKey: 'cli1_priv',
+      peerAddress: '10.0.0.2/32',
+      serverPublicKey: 'pubkey=',
+      serverEndpoint: 'vpn.host.com:51820',
+      allowedIps: '10.0.0.0/24',
+    });
+    expect(profile).toBe(
+      [
+        '[Interface]',
+        'PrivateKey = cli1_priv',
+        'Address = 10.0.0.2/32',
+        'DNS = 1.1.1.1',
+        '',
+        '[Peer]',
+        'PublicKey = pubkey=',
+        'Endpoint = vpn.host.com:51820',
+        'AllowedIPs = 10.0.0.0/24',
+        'PersistentKeepalive = 25',
+        '',
+      ].join('\n'),
+    );
+  });
+
+  it('omits DNS when explicitly disabled', () => {
+    const profile = buildClientProfile({
+      peerPrivateKey: 'PRIV',
+      peerAddress: '10.0.0.2/32',
+      serverPublicKey: 'SRVPUB',
+      serverEndpoint: 'vpn.example.com:51820',
+      allowedIps: '10.0.0.0/24',
+      dns: null,
+    });
+    expect(profile).not.toMatch(/DNS/);
+  });
+
+  it('renders the exact server layout: Address/MTU/SaveConfig/ListenPort/PrivateKey then peers', () => {
+    const conf = buildServerConfig({
+      serverPrivateKey: 'priv_key',
+      addressRange: '10.0.0.1/24',
+      listenPort: 51820,
+      peers: [{ publicKey: 'pubkey_cli1', tunnelAddress: '10.0.0.2' }],
+    });
+    expect(conf).toBe(
+      [
+        '[Interface]',
+        'Address = 10.0.0.1/24',
+        'MTU = 1420',
+        'SaveConfig = true',
+        'ListenPort = 51820',
+        'PrivateKey = priv_key',
+        '',
+        '[Peer]',
+        'PublicKey = pubkey_cli1',
+        'AllowedIPs = 10.0.0.2/32',
+        '',
+      ].join('\n'),
+    );
   });
 
   it('builds a server config listing peers with /32 allowed IPs', () => {
@@ -38,8 +113,10 @@ describe('WireGuard config rendering', () => {
       peers: [{ publicKey: 'PEER1', tunnelAddress: '10.0.0.2' }],
     });
     const stripped = stripForSync(conf);
-    // `wg syncconf` rejects Address (the reported failure); it must be gone.
+    // `wg syncconf` rejects Address/MTU/SaveConfig; they must all be gone.
     expect(stripped).not.toMatch(/^Address\s*=/m);
+    expect(stripped).not.toMatch(/^MTU\s*=/m);
+    expect(stripped).not.toMatch(/^SaveConfig\s*=/m);
     // wg-native fields and peers must survive.
     expect(stripped).toContain('ListenPort = 51820');
     expect(stripped).toContain('PrivateKey = SRVPRIV');

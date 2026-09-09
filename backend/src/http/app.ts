@@ -4,6 +4,7 @@ import multipart from '@fastify/multipart';
 import websocket from '@fastify/websocket';
 import type { WebSocket } from 'ws';
 import type { AppContext } from './context.js';
+import { resolveDeviceConnection } from '../remote/connection.js';
 import { ApiError } from './errors.js';
 import { isUnlocked } from '../crypto/vault.js';
 import { registerAuthRoutes } from './routes/auth.js';
@@ -75,11 +76,11 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
       const session = ctx.sessions.touch(sid);
       if (!session || session.authed !== 1 || !isUnlocked()) return { error: 4401 };
       const { deviceId } = req.params as { deviceId: string };
-      const device = ctx.devices.get(deviceId);
-      if (!device || !device.ssh_target_id) return { error: 4503 };
-      const info = ctx.sshTargets.connectionInfo(device.ssh_target_id);
-      if (!info) return { error: 4503 };
-      return info;
+      // Resolves the jump host too, so a peer on the tunnel network is reached
+      // through its WireGuard server rather than dialled directly.
+      const resolved = resolveDeviceConnection(ctx.devices, ctx.servers, ctx.sshTargets, deviceId);
+      if (!resolved) return { error: 4503 };
+      return resolved.info;
     };
 
     wsScope.get('/ws/ssh/:deviceId', { websocket: true }, (socket: WebSocket, req) => {

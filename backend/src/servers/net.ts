@@ -57,6 +57,16 @@ export function cidrsOverlap(a: string, b: string): boolean {
   return ra.first <= rb.last && rb.first <= ra.last;
 }
 
+/**
+ * Normalize a range to its network CIDR (e.g. `10.0.0.1/24` -> `10.0.0.0/24`).
+ * Used as the split-tunnel route pushed to clients, so only tunnel traffic is
+ * routed over WireGuard.
+ */
+export function networkCidr(range: string): string {
+  const c = parseCidr(range);
+  return `${intToIp(c.base)}/${c.prefix}`;
+}
+
 /** The server's own address is host .1 in the range. */
 export function serverAddress(range: string): string {
   const c = parseCidr(range);

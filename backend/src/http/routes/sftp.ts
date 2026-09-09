@@ -5,6 +5,7 @@ import { errors } from '../errors.js';
 import { requireAuthAndUnlocked } from '../middleware/guard.js';
 import { SftpService } from '../../session/sftp.js';
 import { HostKeyMismatchError } from '../../remote/runner.js';
+import { resolveDeviceConnection } from '../../remote/connection.js';
 
 /**
  * REST SFTP routes for browse + simple up/download (rest-api.md / FR-010).
@@ -18,9 +19,10 @@ export async function registerSftpRoutes(app: FastifyInstance, ctx: AppContext):
     const device = ctx.devices.get(deviceId);
     if (!device) throw errors.notFound('Device not found');
     if (!device.ssh_target_id) throw errors.precondition('Device has no SSH connection configured');
-    const info = ctx.sshTargets.connectionInfo(device.ssh_target_id);
-    if (!info) throw errors.precondition('SSH target missing');
-    return new SftpService(info);
+    // Includes the jump host when the device sits on the tunnel network.
+    const resolved = resolveDeviceConnection(ctx.devices, ctx.servers, ctx.sshTargets, deviceId);
+    if (!resolved) throw errors.precondition('SSH target missing');
+    return new SftpService(resolved.info);
   };
 
   const mapError = (e: unknown): never => {

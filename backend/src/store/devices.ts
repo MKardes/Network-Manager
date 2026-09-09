@@ -110,6 +110,13 @@ export class DeviceRepo {
       .get(serverId, publicKey) as DeviceRow | undefined;
   }
 
+  /** First device wired to an SSH target (used to locate its jump host). */
+  findBySshTarget(sshTargetId: string): DeviceRow | undefined {
+    return this.db
+      .prepare('SELECT * FROM device WHERE ssh_target_id = ? ORDER BY created_at LIMIT 1')
+      .get(sshTargetId) as DeviceRow | undefined;
+  }
+
   usedAddresses(serverId: string): string[] {
     return (
       this.db

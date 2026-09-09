@@ -3,6 +3,7 @@ import {
   parseCidr,
   cidrsOverlap,
   serverAddress,
+  networkCidr,
   allocateAddress,
   addressInRange,
   addressCovered,
@@ -16,6 +17,12 @@ describe('CIDR utilities', () => {
     expect(c.prefix).toBe(24);
     // base should be 10.0.0.0
     expect(c.base >>> 0).toBe(((10 << 24) | 0) >>> 0);
+  });
+
+  it('normalizes a range to its network CIDR', () => {
+    expect(networkCidr('10.0.0.0/24')).toBe('10.0.0.0/24');
+    expect(networkCidr('10.0.0.1/24')).toBe('10.0.0.0/24');
+    expect(networkCidr('192.168.7.130/25')).toBe('192.168.7.128/25');
   });
 
   it('detects overlapping ranges', () => {

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, ApiError, type Server, type SshTarget } from '../api/client';
-import { useActiveServer } from '../app/activeServer';
+import { useActiveServer, reconcileActiveServer } from '../app/activeServer';
 
 /** Servers page: list, register/edit, select-active, apply, and status (T042). */
 export function Servers() {
@@ -21,7 +21,9 @@ export function Servers() {
     try {
       const { servers } = await api.get<{ servers: Server[] }>('/servers');
       setServers(servers);
-      if (!active && servers.length) setActive(servers[0].id);
+      // Also drops a stale selection (deleted server / fresh DATA_DIR), which
+      // would otherwise 404 as "Server not found" on the Devices page.
+      setActive(reconcileActiveServer(active, servers));
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to load servers.');
     }
