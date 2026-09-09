@@ -12,6 +12,7 @@ import { PrefsProvider, usePrefs } from './prefs';
 import { RailShell } from './RailShell';
 import { BarShell } from './BarShell';
 import { useShell } from './useShell';
+import { ShellContext } from './shellContext';
 import { Setup } from '../pages/Setup';
 import { Login } from '../pages/Login';
 import { Unlock } from '../pages/Unlock';
@@ -22,6 +23,7 @@ import { Terminal } from '../pages/Terminal';
 import { Files } from '../pages/Files';
 import { Audit } from '../pages/Audit';
 import { Settings } from '../pages/Settings';
+import { Overview } from '../pages/Overview';
 
 /**
  * App shell: routing + auth/unlock guards (T024). The guard reads vault status
@@ -48,9 +50,11 @@ function Shell() {
   const { effectiveLayout } = usePrefs();
   const Chrome = effectiveLayout === 'rail' ? RailShell : BarShell;
   return (
-    <Chrome shell={shell}>
-      <Outlet />
-    </Chrome>
+    <ShellContext.Provider value={shell}>
+      <Chrome shell={shell}>
+        <Outlet />
+      </Chrome>
+    </ShellContext.Provider>
   );
 }
 
@@ -78,7 +82,7 @@ export function App() {
             <Route path="/unlock" element={<Unlock />} />
             <Route element={<Gate />}>
               <Route element={<Shell />}>
-                <Route path="/" element={<Navigate to="/devices" replace />} />
+                <Route path="/" element={<Overview />} />
                 <Route path="/devices" element={<Devices />} />
                 <Route path="/devices/:deviceId" element={<DeviceDetailRoute />} />
                 <Route path="/devices/:deviceId/terminal" element={<Terminal />} />
