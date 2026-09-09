@@ -1151,3 +1151,29 @@ input[type='checkbox'] {
 .tag-inline {
   margin-left: 6px;
 }
+
+/* ---------- Auth screens (setup / login / unlock) ---------- */
+
+.auth-card {
+  width: min(380px, 100%);
+  border: 1px solid var(--hair);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  padding: 22px 24px 20px;
+  background: var(--bg);
+}
+[data-theme='dark'] .auth-card {
+  background: var(--surface);
+}
+.auth-card h1 {
+  margin: 0 0 6px;
+  font-family: var(--font-heading);
+  font-weight: 600;
+  font-size: 30px;
+  line-height: 1.05;
+}
+.auth-card p {
+  margin: 0 0 14px;
+  font-size: 12.5px;
+  color: var(--muted);
+}

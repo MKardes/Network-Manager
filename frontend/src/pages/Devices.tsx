@@ -10,36 +10,8 @@ import { SegmentsDialog } from '../components/SegmentsDialog';
 import { Segmented } from '../components/ui/Segmented';
 import { Tag, deviceState } from '../components/ui/Tag';
 import { accessSummary, relativeTime } from '../lib/format';
+import { FILTERS, visible, type Filter } from '../lib/deviceFilter';
 import { useServerData, type DeviceRow, type SegmentSummary } from '../lib/useServerData';
-
-type Filter = 'all' | 'connected' | 'offline' | 'review';
-
-const FILTERS: { value: Filter; label: string }[] = [
-  { value: 'all', label: 'All' },
-  { value: 'connected', label: 'Connected' },
-  { value: 'offline', label: 'Offline' },
-  { value: 'review', label: 'Needs review' },
-];
-
-function matches(d: DeviceRow, query: string): boolean {
-  if (!query) return true;
-  const hay = `${d.name} ${d.tunnelAddress ?? ''} ${d.allowedIps ?? ''} ${d.macAddress ?? ''}`;
-  return hay.toLowerCase().includes(query);
-}
-
-function passesFilter(d: DeviceRow, filter: Filter): boolean {
-  switch (filter) {
-    case 'connected':
-      return d.reachability === 'connected' && d.managementState === 'managed';
-    // "Offline" covers everything not currently up, including never-seen devices.
-    case 'offline':
-      return d.reachability !== 'connected' && d.managementState === 'managed';
-    case 'review':
-      return d.managementState === 'needs_review';
-    default:
-      return true;
-  }
-}
 
 /**
  * Devices — a filterable list of everything on the active server. Per-row
@@ -77,7 +49,7 @@ export function Devices() {
 
   const needle = query.trim().toLowerCase();
   const shown = useMemo(
-    () => devices.filter((d) => passesFilter(d, filter) && matches(d, needle)),
+    () => devices.filter((d) => visible(d, filter, needle)),
     [devices, filter, needle],
   );
 
@@ -86,7 +58,7 @@ export function Devices() {
       groups
         .map((g) => ({
           ...g,
-          devices: g.devices.filter((d) => passesFilter(d, filter) && matches(d, needle)),
+          devices: g.devices.filter((d) => visible(d, filter, needle)),
         }))
         .filter((g) => g.devices.length > 0),
     [groups, filter, needle],

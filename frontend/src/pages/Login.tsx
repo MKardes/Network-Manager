@@ -43,31 +43,51 @@ export function Login() {
 
   return (
     <div className="center">
-      <form className="card" onSubmit={submit}>
+      <form className="auth-card" onSubmit={submit}>
+        <div className="kicker">WG Manager</div>
         <h1>Sign in</h1>
-        <label>
-          Username
-          <input value={username} onChange={(e) => setUsername(e.target.value)} required />
-        </label>
-        <label>
-          Password
+        <div className="field">
+          <label className="field__label" htmlFor="login-user">
+            Username
+          </label>
           <input
+            id="login-user"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            required
+          />
+        </div>
+        <div className="field">
+          <label className="field__label" htmlFor="login-password">
+            Password
+          </label>
+          <input
+            id="login-password"
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
           />
-        </label>
+        </div>
         {status?.totpEnabled && (
-          <label>
-            2FA code (or recovery code)
-            <input value={totp} onChange={(e) => setTotp(e.target.value)} autoComplete="one-time-code" />
-          </label>
+          <div className="field">
+            <label className="field__label" htmlFor="login-totp">
+              2FA code (or recovery code)
+            </label>
+            <input
+              id="login-totp"
+              value={totp}
+              onChange={(e) => setTotp(e.target.value)}
+              autoComplete="one-time-code"
+            />
+          </div>
         )}
         {error && <div className="error">{error}</div>}
-        <button disabled={busy} type="submit">
-          {busy ? 'Signing in…' : 'Sign in'}
-        </button>
+        <div className="form-actions">
+          <button className="btn" disabled={busy} type="submit">
+            {busy ? 'Signing in…' : 'Sign in'}
+          </button>
+        </div>
       </form>
     </div>
   );

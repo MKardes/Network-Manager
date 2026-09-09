@@ -25,7 +25,7 @@ export function Setup() {
     try {
       await api.post('/auth/setup', { username, password, passphrase });
       await refresh();
-      nav('/servers');
+      nav('/');
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Setup failed.');
     } finally {
@@ -35,50 +35,69 @@ export function Setup() {
 
   return (
     <div className="center">
-      <form className="card" onSubmit={submit}>
+      <form className="auth-card" onSubmit={submit}>
+        <div className="kicker">WG Manager</div>
         <h1>First-run setup</h1>
-        <p className="muted">
+        <p>
           Create the administrator account and choose a master passphrase. The passphrase encrypts
           all secrets and is <strong>never stored</strong> — if you lose it, secrets are
           unrecoverable.
         </p>
-        <label>
-          Username
-          <input value={username} onChange={(e) => setUsername(e.target.value)} required />
-        </label>
-        <label>
-          Password
+        <div className="field">
+          <label className="field__label" htmlFor="setup-user">
+            Username
+          </label>
           <input
+            id="setup-user"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            required
+          />
+        </div>
+        <div className="field">
+          <label className="field__label" htmlFor="setup-password">
+            Password
+          </label>
+          <input
+            id="setup-password"
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             minLength={8}
             required
           />
-        </label>
-        <label>
-          Master passphrase
+        </div>
+        <div className="field">
+          <label className="field__label" htmlFor="setup-passphrase">
+            Master passphrase
+          </label>
           <input
+            id="setup-passphrase"
             type="password"
             value={passphrase}
             onChange={(e) => setPassphrase(e.target.value)}
             minLength={8}
             required
           />
-        </label>
-        <label>
-          Confirm passphrase
+        </div>
+        <div className="field">
+          <label className="field__label" htmlFor="setup-confirm">
+            Confirm passphrase
+          </label>
           <input
+            id="setup-confirm"
             type="password"
             value={confirm}
             onChange={(e) => setConfirm(e.target.value)}
             required
           />
-        </label>
+        </div>
         {error && <div className="error">{error}</div>}
-        <button disabled={busy} type="submit">
-          {busy ? 'Setting up…' : 'Complete setup'}
-        </button>
+        <div className="form-actions">
+          <button className="btn" disabled={busy} type="submit">
+            {busy ? 'Setting up…' : 'Complete setup'}
+          </button>
+        </div>
       </form>
     </div>
   );
