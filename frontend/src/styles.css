@@ -510,6 +510,10 @@ input[type='checkbox'] {
   font-size: 12px;
   color: var(--muted);
 }
+/* Inputs fill the field; a segmented control hugs its options instead. */
+.field > .segmented {
+  align-self: flex-start;
+}
 
 .form-actions {
   display: flex;
