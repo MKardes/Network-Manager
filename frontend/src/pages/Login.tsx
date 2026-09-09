@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, ApiError } from '../api/client';
 import { useAuth } from '../app/auth';
+import { rememberUser } from '../app/session';
 
 /** Password (+ optional TOTP) login (FR-017/021). */
 export function Login() {
@@ -18,11 +19,14 @@ export function Login() {
     setError(null);
     setBusy(true);
     try {
-      await api.post('/auth/login', {
+      const res = await api.post<{ user: { username: string } }>('/auth/login', {
         username,
         password,
         totp: totp || undefined,
       });
+      // The session is an HttpOnly cookie, so the shell's "signed in as" line
+      // reads the name from here rather than from the API.
+      rememberUser(res.user.username);
       await refresh();
       // After login the vault may still be locked → Unlock; else the app.
       nav('/unlock');
