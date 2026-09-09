@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { api, ApiError, type Device, type WakeResult } from '../api/client';
 
-function wakeMessage(res: WakeResult): string {
+/** The three outcomes a wake attempt can report, in the operator's words. */
+export function wakeMessage(res: WakeResult): string {
   switch (res.result) {
     case 'already_reachable':
       return `Already reachable — packet still sent via ${res.controller}.`;
@@ -12,32 +13,28 @@ function wakeMessage(res: WakeResult): string {
   }
 }
 
-/** Wake a device via its segment controller, surfacing precondition errors (FR-016). */
-export function WakeControls({ device }: { device: Device }) {
-  const [msg, setMsg] = useState<string | null>(null);
+/**
+ * Wake a device via its segment controller, surfacing precondition errors
+ * (FR-016). The detail action bar drives this; the message it returns is shown
+ * inline next to the device's status.
+ */
+export function useWake(device: Pick<Device, 'id'>) {
+  const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const wake = async () => {
-    setMsg(null);
+    setMessage(null);
     setBusy(true);
     try {
       const res = await api.post<WakeResult>(`/devices/${device.id}/wake`);
-      setMsg(wakeMessage(res));
+      setMessage(wakeMessage(res));
     } catch (err) {
       // 422/409 preconditions carry a human-readable explanation.
-      setMsg(err instanceof ApiError ? err.message : 'Wake failed.');
+      setMessage(err instanceof ApiError ? err.message : 'Wake failed.');
     } finally {
       setBusy(false);
     }
   };
 
-  if (device.kind !== 'host' && !device.macAddress) return null;
-  return (
-    <span className="wake">
-      <button disabled={busy} onClick={wake} title="Wake-on-LAN via segment controller">
-        {busy ? 'Waking…' : 'Wake'}
-      </button>
-      {msg && <span className="wake-msg">{msg}</span>}
-    </span>
-  );
+  return { wake, message, busy, clear: () => setMessage(null) };
 }

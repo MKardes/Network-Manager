@@ -1,10 +1,5 @@
-import type { ComponentType, ReactNode } from 'react';
-
-export interface LucideProps {
-  size?: number | string;
-  strokeWidth?: number | string;
-  'aria-hidden'?: boolean;
-}
+import type { ReactNode } from 'react';
+import type { LucideIcon } from 'lucide-react';
 
 /**
  * 34×32 icon button. Every instance carries `label` (the accessible name) and
@@ -21,7 +16,7 @@ export function IconButton({
   className = '',
   children,
 }: {
-  icon: ComponentType<LucideProps>;
+  icon: LucideIcon;
   label: string;
   hint: string;
   variant?: 'outline' | 'primary' | 'accent' | 'danger';

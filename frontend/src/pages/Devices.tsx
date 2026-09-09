@@ -5,6 +5,7 @@ import { useActiveServer } from '../app/activeServer';
 import { usePrefs } from '../app/prefs';
 import { useShellData } from '../app/shellContext';
 import { AddDeviceDialog } from '../components/AddDeviceDialog';
+import { DeviceDrawer } from '../components/DeviceDrawer';
 import { SegmentsDialog } from '../components/SegmentsDialog';
 import { Segmented } from '../components/ui/Segmented';
 import { Tag, deviceState } from '../components/ui/Tag';
@@ -51,7 +52,10 @@ export function Devices() {
   const { servers } = useShellData();
   const [activeId, setActive] = useActiveServer();
   const dropServer = useCallback(() => setActive(null), [setActive]);
-  const { groups, devices, segments, loading, error, reload } = useServerData(activeId, dropServer);
+  const { groups, devices, segments, sshTargets, peers, loading, error, reload } = useServerData(
+    activeId,
+    dropServer,
+  );
 
   const [params, setParams] = useSearchParams();
   const [query, setQuery] = useState('');
@@ -62,6 +66,7 @@ export function Devices() {
 
   const server = servers.find((s) => s.id === activeId) ?? null;
   const showAdd = params.get('add') === '1';
+  const selectedId = params.get('device');
 
   const setParam = (key: string, value: string | null) => {
     const next = new URLSearchParams(params);
@@ -155,8 +160,21 @@ export function Devices() {
     </>
   );
 
+  // The drawer is layout A's detail surface; layout B navigates to a page.
+  const selected = effectiveLayout === 'rail' ? devices.find((d) => d.id === selectedId) : undefined;
+
   const dialogs = (
     <>
+      {selected && (
+        <DeviceDrawer
+          device={selected}
+          peer={peers?.peers.find((p) => p.deviceId === selected.id)}
+          sshTargets={sshTargets}
+          onChanged={reload}
+          onRevoked={() => setParam('device', null)}
+          onClose={() => setParam('device', null)}
+        />
+      )}
       {showAdd && activeId && (
         <AddDeviceDialog
           serverId={activeId}

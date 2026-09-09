@@ -89,11 +89,11 @@ export function FileBrowser({ deviceId }: { deviceId: string }) {
   return (
     <div className="file-browser">
       <div className="path-bar">
-        <button onClick={parent} disabled={path === '/'}>
+        <button type="button" className="btn-outline" onClick={parent} disabled={path === '/'}>
           ↑ Up
         </button>
-        <code>{path}</code>
-        <label className="upload">
+        <code className="mono">{path}</code>
+        <label className="upload btn-outline btn-outline--accent">
           Upload…
           <input
             type="file"
@@ -103,7 +103,7 @@ export function FileBrowser({ deviceId }: { deviceId: string }) {
         </label>
       </div>
       {error && <div className="error">{error}</div>}
-      <table className="grid">
+      <table className="table table--edge">
         <thead>
           <tr>
             <th>Name</th>
@@ -119,7 +119,17 @@ export function FileBrowser({ deviceId }: { deviceId: string }) {
                 {e.name}
               </td>
               <td>{e.isDir ? '—' : e.size}</td>
-              <td>{!e.isDir && <button onClick={() => download(e.name)}>Download</button>}</td>
+              <td className="table__chevron">
+                {!e.isDir && (
+                  <button
+                    type="button"
+                    className="btn-outline btn-outline--sm"
+                    onClick={() => download(e.name)}
+                  >
+                    Download
+                  </button>
+                )}
+              </td>
             </tr>
           ))}
         </tbody>

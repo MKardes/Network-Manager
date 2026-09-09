@@ -24,6 +24,7 @@ import { Files } from '../pages/Files';
 import { Audit } from '../pages/Audit';
 import { Settings } from '../pages/Settings';
 import { Overview } from '../pages/Overview';
+import { DeviceDetailPage } from '../pages/DeviceDetailPage';
 
 /**
  * App shell: routing + auth/unlock guards (T024). The guard reads vault status
@@ -68,7 +69,7 @@ function DeviceDetailRoute() {
   if (effectiveLayout === 'rail') {
     return <Navigate to={`/devices?device=${deviceId ?? ''}`} replace />;
   }
-  return <Navigate to="/devices" replace />;
+  return <DeviceDetailPage />;
 }
 
 export function App() {
