@@ -17,8 +17,17 @@ export async function registerSegmentRoutes(app: FastifyInstance, ctx: AppContex
 
   app.post('/servers/:id/segments', guard, async (req, reply) => {
     const { id } = req.params as { id: string };
-    const body = z.object({ name: z.string().min(1).max(64) }).parse(req.body);
-    const segment = ctx.segmentService.create(id, body.name);
+    const body = z
+      .object({
+        name: z.string().min(1).max(64),
+        broadcastAddress: z.string().nullable().optional(),
+        wolPort: z.number().int().min(1).max(65535).nullable().optional(),
+      })
+      .parse(req.body);
+    const segment = ctx.segmentService.create(id, body.name, {
+      broadcastAddress: body.broadcastAddress,
+      wolPort: body.wolPort,
+    });
     return reply.code(201).send({ segment });
   });
 
@@ -28,6 +37,8 @@ export async function registerSegmentRoutes(app: FastifyInstance, ctx: AppContex
       .object({
         name: z.string().min(1).max(64).optional(),
         wakeControllerDeviceId: z.string().uuid().nullable().optional(),
+        broadcastAddress: z.string().nullable().optional(),
+        wolPort: z.number().int().min(1).max(65535).nullable().optional(),
       })
       .parse(req.body);
     return { segment: ctx.segmentService.update(id, body) };

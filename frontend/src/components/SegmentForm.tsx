@@ -35,6 +35,19 @@ export function SegmentForm({
     onChange();
   };
 
+  const setWolTarget = async (
+    segmentId: string,
+    patch: { broadcastAddress?: string | null; wolPort?: number | null },
+  ) => {
+    setError(null);
+    try {
+      await api.patch(`/segments/${segmentId}`, patch);
+      onChange();
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : 'Failed to update LAN targeting.');
+    }
+  };
+
   return (
     <div className="card">
       <h2>LAN segments</h2>
@@ -56,6 +69,29 @@ export function SegmentForm({
                   </option>
                 ))}
               </select>
+            </label>
+            <label className="inline">
+              broadcast:
+              <input
+                defaultValue={seg.broadcastAddress ?? ''}
+                placeholder="192.168.1.255"
+                onBlur={(e) =>
+                  setWolTarget(seg.id, { broadcastAddress: e.target.value.trim() || null })
+                }
+              />
+            </label>
+            <label className="inline">
+              WoL port:
+              <input
+                type="number"
+                min={1}
+                max={65535}
+                defaultValue={seg.wolPort ?? ''}
+                placeholder="9"
+                onBlur={(e) =>
+                  setWolTarget(seg.id, { wolPort: e.target.value ? Number(e.target.value) : null })
+                }
+              />
             </label>
           </li>
         ))}

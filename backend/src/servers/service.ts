@@ -7,6 +7,7 @@ import { buildServerConfig } from './profile.js';
 import { serverAddress, cidrsOverlap, parseCidr } from './net.js';
 import { LocalApplier } from './local.js';
 import { RemoteApplier } from './remote.js';
+import { importLivePeers } from './peers.js';
 import type { PeerStatus } from './status.js';
 import { ApiError, errors } from '../http/errors.js';
 
@@ -132,13 +133,21 @@ export class ServerService {
     });
   }
 
-  /** Render the current server config from its peers. */
+  /**
+   * Render the current server config from its peers. Includes both app-created
+   * (managed) and imported (needs-review) peers so a sync preserves externally-
+   * added peers (FR-016). Imported peers render their verbatim AllowedIPs.
+   */
   private renderConfig(row: ServerRow): string {
     const privateKey = this.servers.privateKey(row.id)!;
     const peers = this.devices
       .listByServer(row.id)
-      .filter((d) => d.kind === 'peer' && d.peer_public_key && d.tunnel_address)
-      .map((d) => ({ publicKey: d.peer_public_key!, tunnelAddress: d.tunnel_address! }));
+      .filter((d) => d.kind === 'peer' && d.peer_public_key && (d.tunnel_address || d.allowed_ips))
+      .map((d) => ({
+        publicKey: d.peer_public_key!,
+        tunnelAddress: d.tunnel_address,
+        allowedIps: d.allowed_ips,
+      }));
     const [, portStr] = row.listen_endpoint.split(':');
     return buildServerConfig({
       serverPrivateKey: privateKey,
@@ -159,6 +168,15 @@ export class ServerService {
   async apply(id: string): Promise<ServerView> {
     const row = this.servers.get(id);
     if (!row) throw errors.notFound('Server not found');
+    // Non-destructive apply (FR-016/017/018): import any live peers we don't yet
+    // track so the rendered config preserves externally-added peers. If live
+    // peer data can't be read, proceed with the peers already known.
+    try {
+      const { peers } = await this.applier(row).status(row.interface_name);
+      importLivePeers(this.devices, id, peers);
+    } catch {
+      // live peers unreadable — keep going with tracked peers
+    }
     const config = this.renderConfig(row);
     try {
       await this.applier(row).apply(row.interface_name, config);

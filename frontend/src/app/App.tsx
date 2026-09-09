@@ -5,6 +5,7 @@ import { Setup } from '../pages/Setup';
 import { Login } from '../pages/Login';
 import { Unlock } from '../pages/Unlock';
 import { Servers } from '../pages/Servers';
+import { SshTargets } from '../pages/SshTargets';
 import { Devices } from '../pages/Devices';
 import { Terminal } from '../pages/Terminal';
 import { Files } from '../pages/Files';
@@ -40,6 +41,7 @@ function Shell({ children }: { children: JSX.Element }) {
       <nav className="sidebar">
         <div className="brand">WG Manager</div>
         <Link to="/servers">Servers</Link>
+        <Link to="/ssh-targets">SSH Targets</Link>
         <Link to="/devices">Devices</Link>
         <Link to="/audit">Audit</Link>
         <Link to="/settings">Settings</Link>
@@ -66,6 +68,16 @@ export function App() {
               <Gate>
                 <Shell>
                   <Servers />
+                </Shell>
+              </Gate>
+            }
+          />
+          <Route
+            path="/ssh-targets"
+            element={
+              <Gate>
+                <Shell>
+                  <SshTargets />
                 </Shell>
               </Gate>
             }

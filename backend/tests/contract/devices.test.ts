@@ -63,6 +63,9 @@ describe('devices contract', () => {
     expect(res.statusCode).toBe(200);
     expect(res.body).toContain('[Interface]');
     expect(res.body).toContain('[Peer]');
+    // Split tunnel: only the server's tunnel network, never all traffic.
+    expect(res.body).toContain('AllowedIPs = 10.0.0.0/24');
+    expect(res.body).not.toContain('0.0.0.0/0');
   });
 
   it('rotates peer keys, changing the public key', async () => {

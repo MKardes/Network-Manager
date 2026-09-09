@@ -3,7 +3,7 @@ import { ServerRepo } from '../store/servers.js';
 import { AuditService } from '../audit/audit.js';
 import { generateWgKeyPair } from '../servers/keys.js';
 import { buildClientProfile } from '../servers/profile.js';
-import { allocateAddress } from '../servers/net.js';
+import { allocateAddress, networkCidr, validateAssignableAddress } from '../servers/net.js';
 import { errors } from '../http/errors.js';
 
 const ACTOR = 'operator';
@@ -15,6 +15,12 @@ export interface CreateDeviceInput {
   segmentId?: string | null;
   macAddress?: string | null;
   sshTargetId?: string | null;
+  tunnelAddress?: string | null; // peer only; omit for auto-assignment
+}
+
+export interface AdoptDeviceInput {
+  name: string;
+  segmentId?: string | null;
 }
 
 /**
@@ -51,12 +57,32 @@ export class DeviceService {
     let peerPrivateKey: string | null = null;
 
     if (input.kind === 'peer') {
-      // Allocate a unique tunnel address and generate a keypair (FR-003).
-      const used = this.devices.usedAddresses(serverId);
-      try {
-        tunnelAddress = allocateAddress(server.address_range, used);
-      } catch {
-        throw errors.conflict('address_exhausted', 'No free tunnel addresses in range');
+      // Address is either operator-specified (FR-006) or auto-assigned (FR-007).
+      // The in-use set spans managed AND imported peers, including subnets (FR-009).
+      const used = this.devices.usedCidrs(serverId);
+      if (input.tunnelAddress) {
+        const check = validateAssignableAddress(server.address_range, input.tunnelAddress, used);
+        if (!check.ok) {
+          if (check.reason === 'in_use') {
+            throw errors.conflict('address_in_use', 'That tunnel address is already in use');
+          }
+          if (check.reason === 'out_of_range') {
+            throw errors.validation(
+              `Address ${input.tunnelAddress} is outside the server range ${server.address_range}`,
+            );
+          }
+          if (check.reason === 'reserved') {
+            throw errors.validation(`Address ${input.tunnelAddress} is reserved`);
+          }
+          throw errors.validation(`Invalid tunnel address: ${input.tunnelAddress}`);
+        }
+        tunnelAddress = input.tunnelAddress.split('/')[0];
+      } else {
+        try {
+          tunnelAddress = allocateAddress(server.address_range, used);
+        } catch {
+          throw errors.conflict('address_exhausted', 'No free tunnel addresses in range');
+        }
       }
       const keys = await generateWgKeyPair();
       peerPublicKey = keys.publicKey;
@@ -80,9 +106,52 @@ export class DeviceService {
       targetType: 'device',
       targetId: row.id,
       outcome: 'success',
-      detail: `kind=${row.kind}`,
+      detail:
+        input.kind === 'peer'
+          ? `kind=peer address=${tunnelAddress} assign=${input.tunnelAddress ? 'manual' : 'auto'}`
+          : `kind=${row.kind}`,
     });
     return toDeviceView(row);
+  }
+
+  /**
+   * Adopt an imported (needs-review) peer into managed state (FR-011), keeping
+   * its existing address and public key. No private key is fabricated (FR-012).
+   */
+  adopt(id: string, input: AdoptDeviceInput): DeviceView {
+    const row = this.devices.get(id);
+    if (!row) throw errors.notFound('Device not found');
+    if (row.management_state !== 'needs_review') {
+      throw errors.validation('Only imported (needs-review) peers can be adopted');
+    }
+    // Reject adoption when this peer's address collides with another MANAGED
+    // device — a pre-existing conflict on the server (FR-013).
+    const addr = row.tunnel_address;
+    if (addr) {
+      const conflict = this.devices
+        .listByServer(row.server_id)
+        .some(
+          (d) =>
+            d.id !== id &&
+            d.management_state === 'managed' &&
+            d.tunnel_address === addr,
+        );
+      if (conflict) {
+        throw errors.conflict('address_conflict', `Address ${addr} conflicts with a managed device`);
+      }
+    }
+    this.devices.adopt(id, input.name);
+    if (input.segmentId !== undefined) {
+      this.devices.update(id, { segment_id: input.segmentId });
+    }
+    this.audit.record({
+      actor: ACTOR,
+      action: 'device_adopt',
+      targetType: 'device',
+      targetId: id,
+      outcome: 'success',
+    });
+    return toDeviceView(this.devices.get(id)!);
   }
 
   update(id: string, patch: Partial<CreateDeviceInput>): DeviceView {
@@ -158,6 +227,9 @@ export class DeviceService {
       peerAddress: `${row.tunnel_address}/32`,
       serverPublicKey: server.server_public_key,
       serverEndpoint: server.listen_endpoint,
+      // Split tunnel: route only the server's tunnel network over WireGuard.
+      // A full tunnel (0.0.0.0/0) would hijack all of the client's traffic.
+      allowedIps: networkCidr(server.address_range),
     });
   }
 }
