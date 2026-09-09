@@ -1147,3 +1147,7 @@ input[type='checkbox'] {
     border-top: 1px solid var(--hair);
   }
 }
+
+.tag-inline {
+  margin-left: 6px;
+}
