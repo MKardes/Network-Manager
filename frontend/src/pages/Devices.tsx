@@ -1,344 +1,322 @@
-import { useEffect, useState, useCallback } from 'react';
-import { Link } from 'react-router-dom';
-import {
-  api,
-  ApiError,
-  type DeviceGroups,
-  type Device,
-  type Segment,
-  type PeersResponse,
-  type ReachabilityResult,
-  type SshTarget,
-} from '../api/client';
+import { useCallback, useMemo, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { api, type WakeResult } from '../api/client';
 import { useActiveServer } from '../app/activeServer';
-import { SegmentForm } from '../components/SegmentForm';
-import { WakeControls } from '../components/WakeControls';
+import { usePrefs } from '../app/prefs';
+import { useShellData } from '../app/shellContext';
+import { AddDeviceDialog } from '../components/AddDeviceDialog';
+import { DeviceDrawer } from '../components/DeviceDrawer';
+import { SegmentsDialog } from '../components/SegmentsDialog';
+import { Segmented } from '../components/ui/Segmented';
+import { Tag, deviceState } from '../components/ui/Tag';
+import { accessSummary, relativeTime } from '../lib/format';
+import { FILTERS, visible, type Filter } from '../lib/deviceFilter';
+import { useServerData, type DeviceRow, type SegmentSummary } from '../lib/useServerData';
 
-/** Devices page: list grouped by LAN, add/edit, rotate/revoke, download profile (T043). */
+/**
+ * Devices — a filterable list of everything on the active server. Per-row
+ * actions live in the detail surface (drawer in the rail layout, page in the
+ * bar layout); the row itself is the only control here.
+ */
 export function Devices() {
-  const [active, setActive] = useActiveServer();
-  const [data, setData] = useState<DeviceGroups | null>(null);
-  const [segments, setSegments] = useState<Segment[]>([]);
-  const [sshTargets, setSshTargets] = useState<SshTarget[]>([]);
-  const [peers, setPeers] = useState<PeersResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [form, setForm] = useState({
-    name: '',
-    kind: 'peer' as 'peer' | 'host',
-    macAddress: '',
-    segmentId: '',
-    tunnelAddress: '',
-    sshTargetId: '',
+  const nav = useNavigate();
+  const { effectiveLayout } = usePrefs();
+  const { servers } = useShellData();
+  const [activeId, setActive] = useActiveServer();
+  const dropServer = useCallback(() => setActive(null), [setActive]);
+  const { groups, devices, segments, sshTargets, peers, loading, error, reload } = useServerData(
+    activeId,
+    dropServer,
+  );
+
+  const [params, setParams] = useSearchParams();
+  const [query, setQuery] = useState('');
+  const [filter, setFilter] = useState<Filter>('all');
+  const [showSegments, setShowSegments] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  const server = servers.find((s) => s.id === activeId) ?? null;
+  const showAdd = params.get('add') === '1';
+  const selectedId = params.get('device');
+
+  const setParam = (key: string, value: string | null) => {
+    const next = new URLSearchParams(params);
+    if (value === null) next.delete(key);
+    else next.set(key, value);
+    setParams(next, { replace: true });
+  };
+
+  const needle = query.trim().toLowerCase();
+  const shown = useMemo(
+    () => devices.filter((d) => visible(d, filter, needle)),
+    [devices, filter, needle],
+  );
+
+  const boards = useMemo<SegmentSummary[]>(
+    () =>
+      groups
+        .map((g) => ({
+          ...g,
+          devices: g.devices.filter((d) => visible(d, filter, needle)),
+        }))
+        .filter((g) => g.devices.length > 0),
+    [groups, filter, needle],
+  );
+
+  /** Row click opens the detail: the drawer in the rail, a page in the bar. */
+  const open = (id: string) => {
+    if (effectiveLayout === 'rail') setParam('device', id);
+    else nav(`/devices/${id}`);
+  };
+
+  const wakeAll = async (group: SegmentSummary) => {
+    setNotice(null);
+    setActionError(null);
+    const targets = group.devices.filter((d) => d.macAddress);
+    if (targets.length === 0) {
+      setActionError(`No device in ${group.name} has a MAC address on record.`);
+      return;
+    }
+    let woken = 0;
+    for (const d of targets) {
+      try {
+        await api.post<WakeResult>(`/devices/${d.id}/wake`);
+        woken += 1;
+      } catch {
+        /* per-device preconditions are reported in the summary below */
+      }
+    }
+    setNotice(`Sent wake packets to ${woken} of ${targets.length} devices in ${group.name}.`);
+    await reload();
+  };
+
+  if (!activeId) {
+    return (
+      <p className="empty">{error ?? 'Register a server on the Servers page to get started.'}</p>
+    );
+  }
+
+  const rowProps = (d: DeviceRow) => ({
+    'data-clickable': true,
+    tabIndex: 0,
+    role: 'button' as const,
+    'aria-label': `Open ${d.name}`,
+    onClick: () => open(d.id),
+    onKeyDown: (e: React.KeyboardEvent) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        open(d.id);
+      }
+    },
   });
 
-  const load = useCallback(async () => {
-    if (!active) return;
-    try {
-      const [groups, segs, peerView, targets] = await Promise.all([
-        api.get<DeviceGroups>(`/servers/${active}/devices`),
-        api.get<{ segments: Segment[] }>(`/servers/${active}/segments`),
-        api.get<PeersResponse>(`/servers/${active}/peers`),
-        api.get<{ sshTargets: SshTarget[] }>('/ssh-targets'),
-      ]);
-      setData(groups);
-      setSegments(segs.segments);
-      setPeers(peerView);
-      setSshTargets(targets.sshTargets);
-    } catch (err) {
-      if (err instanceof ApiError && err.status === 404) {
-        // The remembered server is gone; drop it so the Servers page can pick
-        // a live one instead of every call failing with "Server not found".
-        setActive(null);
-        setError('The selected server no longer exists. Pick a server on the Servers page.');
-        return;
-      }
-      setError(err instanceof ApiError ? err.message : 'Failed to load devices.');
-    }
-  }, [active, setActive]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-  if (!active) return <p className="muted">{error ?? 'Select a server on the Servers page first.'}</p>;
-
-  const allDevices: Device[] = data
-    ? [...data.groups.flatMap((g) => g.devices), ...data.ungrouped]
-    : [];
-
-  const addDevice = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-    try {
-      await api.post(`/servers/${active}/devices`, {
-        name: form.name,
-        kind: form.kind,
-        macAddress: form.macAddress || null,
-        segmentId: form.segmentId || null,
-        tunnelAddress: form.kind === 'peer' && form.tunnelAddress ? form.tunnelAddress : undefined,
-        sshTargetId: form.sshTargetId || null,
-      });
-      setForm({ ...form, name: '', macAddress: '', tunnelAddress: '' });
-      await load();
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Failed to add device.');
-    }
-  };
-
-  const adopt = async (deviceId: string, currentName: string) => {
-    const name = prompt('Adopt this peer as a managed device. Name:', currentName);
-    if (!name) return;
-    setError(null);
-    try {
-      await api.post(`/devices/${deviceId}/adopt`, { name });
-      await load();
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Failed to adopt peer.');
-    }
-  };
-
-  /**
-   * Bind an SSH target to a device — the app only offers Terminal/Files once a
-   * device has one, and it's what routes the session (via the WireGuard server
-   * when the target sits on the tunnel network).
-   */
-  const attachSsh = async (id: string, sshTargetId: string | null) => {
-    setError(null);
-    try {
-      await api.patch(`/devices/${id}`, { sshTargetId });
-      await load();
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Failed to set the SSH target.');
-    }
-  };
-
-  const rotate = async (id: string) => {
-    await api.post(`/devices/${id}/rotate-keys`).catch(() => undefined);
-    await load();
-  };
-  const test = async (id: string) => {
-    setError(null);
-    try {
-      await api.post<ReachabilityResult>(`/devices/${id}/test`);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Connectivity test unavailable.');
-    }
-    await load();
-  };
-  const revoke = async (id: string) => {
-    if (!confirm('Revoke/remove this device?')) return;
-    await api.del(`/devices/${id}`).catch(() => undefined);
-    await load();
-  };
-  const downloadProfile = async (d: Device) => {
-    const blob = await api.download(`/devices/${d.id}/profile`);
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${d.name}.conf`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const deviceTableHead = (
-    <thead>
-      <tr>
-        <th>Name</th>
-        <th>Kind</th>
-        <th>Address</th>
-        <th>Reachability</th>
-        <th>SSH target</th>
-        <th></th>
-      </tr>
-    </thead>
+  const nameCell = (d: DeviceRow) => (
+    <>
+      <span className="device-name">{d.name}</span>
+      <span className="device-kind">{d.kind}</span>
+      {d.isController && (
+        <Tag state="review" className="tag-inline">
+          wake ctrl
+        </Tag>
+      )}
+    </>
   );
 
-  const renderDevice = (d: Device, controllerId: string | null) => (
-    <tr key={d.id}>
-      <td>
-        {d.name}
-        {d.id === controllerId && <span className="badge controller">controller</span>}
-      </td>
-      <td>{d.kind}</td>
-      <td>{d.tunnelAddress ?? d.macAddress ?? '—'}</td>
-      <td>
-        <span className={`badge ${d.reachability}`}>{d.reachability}</span>
-        {d.lastSeenAt && <span className="muted"> · seen {new Date(d.lastSeenAt).toLocaleString()}</span>}
-      </td>
-      <td>
-        {/* Binding a target here is what enables Terminal/Files for the device. */}
-        <select
-          value={d.sshTargetId ?? ''}
-          onChange={(e) => attachSsh(d.id, e.target.value || null)}
-          title="SSH target used for Terminal and Files"
-          aria-label={`SSH target for ${d.name}`}
-        >
-          <option value="">— none —</option>
-          {sshTargets.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.username}@{t.host}
-            </option>
-          ))}
-        </select>
-        {sshTargets.length === 0 && (
-          <div className="muted">
-            <Link to="/ssh-targets">Add an SSH target</Link>
+  const messages = (
+    <>
+      {error && <div className="error">{error}</div>}
+      {actionError && <div className="error">{actionError}</div>}
+      {notice && <div className="notice">{notice}</div>}
+      {loading && <div className="loading">Loading…</div>}
+    </>
+  );
+
+  // The drawer is layout A's detail surface; layout B navigates to a page.
+  const selected = effectiveLayout === 'rail' ? devices.find((d) => d.id === selectedId) : undefined;
+
+  const dialogs = (
+    <>
+      {selected && (
+        <DeviceDrawer
+          device={selected}
+          peer={peers?.peers.find((p) => p.deviceId === selected.id)}
+          sshTargets={sshTargets}
+          onChanged={reload}
+          onRevoked={() => setParam('device', null)}
+          onClose={() => setParam('device', null)}
+        />
+      )}
+      {showAdd && activeId && (
+        <AddDeviceDialog
+          serverId={activeId}
+          segments={segments}
+          onClose={() => setParam('add', null)}
+          onCreated={async () => {
+            setParam('add', null);
+            await reload();
+          }}
+        />
+      )}
+      {showSegments && activeId && (
+        <SegmentsDialog
+          serverId={activeId}
+          segments={segments}
+          devices={devices}
+          onClose={() => setShowSegments(false)}
+          onChange={reload}
+        />
+      )}
+    </>
+  );
+
+  if (effectiveLayout === 'bar') {
+    return (
+      <div className="page">
+        <div className="page-head">
+          <h1 className="h1" style={{ fontSize: 32, margin: 0 }}>
+            Devices
+          </h1>
+          <div className="toolbar">
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Filter devices"
+              aria-label="Filter devices"
+              style={{ minWidth: 200 }}
+            />
+            <Segmented
+              options={FILTERS}
+              value={filter}
+              onChange={setFilter}
+              label="Device state filter"
+            />
+            <button type="button" className="btn-outline" onClick={() => setShowSegments(true)}>
+              Segments
+            </button>
+            <button
+              type="button"
+              className="btn btn--compact"
+              onClick={() => setParam('add', '1')}
+            >
+              Add device
+            </button>
           </div>
+        </div>
+
+        {messages}
+
+        {boards.map((g) => (
+          <section className="board-panel" key={g.id ?? 'ungrouped'}>
+            <div className="board-panel__head">
+              <h2>{g.name}</h2>
+              <span className="panel__meta">
+                {g.up}/{g.devices.length} up
+              </span>
+              <span className="muted" style={{ fontSize: 12 }}>
+                {g.controllerName ? `wake controller: ${g.controllerName}` : 'no wake controller'}
+              </span>
+              <div className="spacer" />
+              <button type="button" className="btn-link" onClick={() => void wakeAll(g)}>
+                Wake all
+              </button>
+            </div>
+            <table className="table">
+              <tbody>
+                {g.devices.map((d) => (
+                  <tr key={d.id} {...rowProps(d)}>
+                    <td>{nameCell(d)}</td>
+                    <td className="cell-mono">{d.tunnelAddress ?? d.macAddress ?? '—'}</td>
+                    <td>
+                      <Tag state={deviceState(d)} />
+                    </td>
+                    <td className="cell-access">{accessSummary(d)}</td>
+                    <td className="table__chevron">›</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </section>
+        ))}
+        {boards.length === 0 && !loading && (
+          <p className="empty">No devices match this filter.</p>
         )}
-      </td>
-      <td className="actions">
-        {d.kind === 'peer' && d.tunnelAddress && (
-          <button onClick={() => test(d.id)} title="Probe reachability through the server">
-            Test
-          </button>
-        )}
-        {d.kind === 'peer' && (
-          <>
-            <button onClick={() => downloadProfile(d)}>Profile</button>
-            <button onClick={() => rotate(d.id)}>Rotate</button>
-          </>
-        )}
-        {d.sshTargetId && (
-          <>
-            <Link to={`/devices/${d.id}/terminal`}>Terminal</Link>
-            <Link to={`/devices/${d.id}/files`}>Files</Link>
-          </>
-        )}
-        <WakeControls device={d} />
-        <button className="danger" onClick={() => revoke(d.id)}>
-          Revoke
-        </button>
-      </td>
-    </tr>
-  );
+
+        {dialogs}
+      </div>
+    );
+  }
 
   return (
-    <div>
-      <h1>Devices</h1>
-      {error && <div className="error">{error}</div>}
-
-      <div className="segment-group">
-        <h3>
-          Current peers
-          {peers && !peers.live && <span className="muted"> · offline snapshot (not live)</span>}
-        </h3>
-        {peers && peers.peers.length > 0 ? (
-          <table className="grid">
-            <tbody>
-              {peers.peers.map((p) => (
-                <tr key={p.deviceId}>
-                  <td>{p.name}</td>
-                  <td>{p.tunnelAddress ?? p.allowedIps ?? '—'}</td>
-                  <td>
-                    <span className={`badge ${p.managementState === 'managed' ? 'controller' : 'unknown'}`}>
-                      {p.managementState === 'managed' ? 'managed' : 'needs review'}
-                    </span>
-                    {peers.live && (
-                      <span className={`badge ${p.connected ? 'connected' : 'offline'}`}>
-                        {p.connected ? 'connected' : 'idle'}
-                      </span>
-                    )}
-                    {peers.live && !p.presentOnServer && <span className="badge offline">not on server</span>}
-                    {p.outOfRange && <span className="badge offline">out of range</span>}
-                  </td>
-                  <td className="actions">
-                    {p.managementState === 'needs_review' && (
-                      <button onClick={() => adopt(p.deviceId, p.name)}>Adopt</button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        ) : (
-          <p className="muted">No peers on this server yet.</p>
-        )}
+    <div className="page" style={{ gap: 14 }}>
+      <div className="page-head">
+        <div>
+          <div className="kicker">{server?.name ?? 'Server'}</div>
+          <h1 className="h1">Devices</h1>
+        </div>
+        <button type="button" className="btn" onClick={() => setParam('add', '1')}>
+          Add device
+        </button>
       </div>
 
-      {data?.groups.map((g) => (
-        <div key={g.segment.id} className="segment-group">
-          <h3>
-            {g.segment.name}
-            {g.wakeControllerDeviceId && <span className="muted"> · has wake controller</span>}
-          </h3>
-          <table className="grid">
-            {deviceTableHead}
-            <tbody>{g.devices.map((d) => renderDevice(d, g.wakeControllerDeviceId))}</tbody>
-          </table>
-        </div>
-      ))}
+      <div className="toolbar">
+        <input
+          className="toolbar__search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Filter by name, address or MAC"
+          aria-label="Filter by name, address or MAC"
+        />
+        <Segmented
+          options={FILTERS}
+          value={filter}
+          onChange={setFilter}
+          label="Device state filter"
+        />
+        <button type="button" className="btn-outline" onClick={() => setShowSegments(true)}>
+          Segments
+        </button>
+      </div>
 
-      <div className="segment-group">
-        <h3>Ungrouped</h3>
-        <table className="grid">
-          {deviceTableHead}
-          <tbody>{(data?.ungrouped ?? []).map((d) => renderDevice(d, null))}</tbody>
+      {messages}
+
+      <div className="table-scroll">
+        <table className="table table--edge">
+          <thead>
+            <tr>
+              <th>Device</th>
+              <th>Segment</th>
+              <th>Address</th>
+              <th>State</th>
+              <th>Access</th>
+              <th />
+            </tr>
+          </thead>
+          <tbody>
+            {shown.map((d) => (
+              <tr key={d.id} {...rowProps(d)}>
+                <td>{nameCell(d)}</td>
+                <td className="muted">{d.segmentName}</td>
+                <td className="cell-mono">{d.tunnelAddress ?? d.macAddress ?? '—'}</td>
+                <td>
+                  <Tag state={deviceState(d)} />
+                  {d.reachability !== 'connected' && (
+                    <span className="cell-seen">{relativeTime(d.lastSeenAt)}</span>
+                  )}
+                </td>
+                <td className="cell-access">{accessSummary(d)}</td>
+                <td className="table__chevron">›</td>
+              </tr>
+            ))}
+          </tbody>
         </table>
       </div>
+      {shown.length === 0 && !loading && <p className="empty">No devices match this filter.</p>}
+      <div className="muted" style={{ fontSize: 12 }}>
+        {shown.length} of {devices.length} devices
+      </div>
 
-      <SegmentForm serverId={active} segments={segments} devices={allDevices} onChange={load} />
-
-      <form className="card" onSubmit={addDevice}>
-        <h2>Add device</h2>
-        <label>
-          Name
-          <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
-        </label>
-        <label>
-          Kind
-          <select
-            value={form.kind}
-            onChange={(e) => setForm({ ...form, kind: e.target.value as 'peer' | 'host' })}
-          >
-            <option value="peer">peer (WireGuard)</option>
-            <option value="host">host (non-peer)</option>
-          </select>
-        </label>
-        {form.kind === 'peer' && (
-          <label>
-            Tunnel address (optional — blank auto-assigns)
-            <input
-              value={form.tunnelAddress}
-              onChange={(e) => setForm({ ...form, tunnelAddress: e.target.value })}
-              placeholder="e.g. 10.0.0.50"
-            />
-          </label>
-        )}
-        <label>
-          MAC address (for Wake-on-LAN)
-          <input
-            value={form.macAddress}
-            onChange={(e) => setForm({ ...form, macAddress: e.target.value })}
-            placeholder="AA:BB:CC:DD:EE:FF"
-          />
-        </label>
-        <label>
-          SSH target (for Terminal/Files)
-          <select
-            value={form.sshTargetId}
-            onChange={(e) => setForm({ ...form, sshTargetId: e.target.value })}
-          >
-            <option value="">— none —</option>
-            {sshTargets.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.username}@{t.host}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Segment
-          <select value={form.segmentId} onChange={(e) => setForm({ ...form, segmentId: e.target.value })}>
-            <option value="">— none —</option>
-            {segments.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <button type="submit">Add</button>
-      </form>
+      {dialogs}
     </div>
   );
 }

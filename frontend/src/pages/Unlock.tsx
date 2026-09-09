@@ -18,15 +18,11 @@ export function Unlock() {
     try {
       await api.post('/vault/unlock', { passphrase });
       await refresh();
-      nav('/servers');
+      nav('/');
     } catch (err) {
-      if (err instanceof ApiError && err.status === 401) {
-        setError('Incorrect master passphrase.');
-      } else if (err instanceof ApiError && err.status === 401) {
-        nav('/login');
-      } else {
-        setError(err instanceof ApiError ? err.message : 'Unlock failed.');
-      }
+      // A wrong passphrase and an expired session both answer 401 with the same
+      // error code, so surface the server's message instead of guessing which.
+      setError(err instanceof ApiError ? err.message : 'Unlock failed.');
     } finally {
       setBusy(false);
     }
@@ -34,23 +30,29 @@ export function Unlock() {
 
   return (
     <div className="center">
-      <form className="card" onSubmit={submit}>
+      <form className="auth-card" onSubmit={submit}>
+        <div className="kicker">WG Manager</div>
         <h1>Unlock vault</h1>
-        <p className="muted">Enter the master passphrase to decrypt stored secrets for this session.</p>
-        <label>
-          Master passphrase
+        <p>Enter the master passphrase to decrypt stored secrets for this session.</p>
+        <div className="field">
+          <label className="field__label" htmlFor="unlock-passphrase">
+            Master passphrase
+          </label>
           <input
+            id="unlock-passphrase"
             type="password"
             value={passphrase}
             onChange={(e) => setPassphrase(e.target.value)}
             autoFocus
             required
           />
-        </label>
+        </div>
         {error && <div className="error">{error}</div>}
-        <button disabled={busy} type="submit">
-          {busy ? 'Unlocking…' : 'Unlock'}
-        </button>
+        <div className="form-actions">
+          <button className="btn" disabled={busy} type="submit">
+            {busy ? 'Unlocking…' : 'Unlock'}
+          </button>
+        </div>
       </form>
     </div>
   );
